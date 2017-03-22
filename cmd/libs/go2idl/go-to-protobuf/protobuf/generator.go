@@ -242,6 +242,17 @@ func (p protobufLocator) ProtoTypeFor(t *types.Type) (*types.Type, error) {
 		p.tracker.AddType(t)
 		return t, nil
 	}
+	
+	if t.Kind == types.Interface || isOptionalAlias(t) {
+		t := &types.Type{
+			Name: p.namer.GoNameToProtoName(t.Name),
+			Kind: types.Protobuf,
+			CommentLines: t.CommentLines,
+		}
+		p.tracker.AddType(t)
+		return t, nil
+	}
+	
 	return nil, errUnrecognizedType
 }
 
@@ -532,9 +543,19 @@ func memberTypeToProtobufField(locator ProtobufLocator, field *protoField, t *ty
 		}
 		field.Type, err = locator.ProtoTypeFor(t)
 		field.Nullable = false
+	case types.Interface:
+		if len(t.Name.Name) == 0 {
+			fmt.Printf("unknown type interface: '%s' '%s'\n",t.Name, t.Name.Name)
+			return errUnrecognizedType
+		}
+		field.Type, err = locator.ProtoTypeFor(t)
+		fmt.Printf("prototype: '%s' '%s'\n",field.Type, err )
+		field.Nullable = false
 	default:
+		fmt.Printf("unknown type %s %s\n",t.Kind,t)
 		return errUnrecognizedType
 	}
+	fmt.Printf("error type kind:%s t:%s err:%s\n",t.Kind,t,err)
 	return err
 }
 
@@ -615,6 +636,7 @@ func membersToFields(locator ProtobufLocator, t *types.Type, localPackage types.
 	fields := []protoField{}
 
 	for _, m := range t.Members {
+		fmt.Printf("Field1 %+v\n", m)
 		if namer.IsPrivateGoName(m.Name) {
 			// skip private fields
 			continue
@@ -625,7 +647,7 @@ func membersToFields(locator ProtobufLocator, t *types.Type, localPackage types.
 		tags := reflect.StructTag(m.Tags)
 		field := protoField{
 			LocalPackage: localPackage,
-
+			Name: m.Name,
 			Tag:    -1,
 			Extras: make(map[string]string),
 		}
@@ -652,7 +674,9 @@ func membersToFields(locator ProtobufLocator, t *types.Type, localPackage types.
 
 		if field.Type == nil {
 			if err := memberTypeToProtobufField(locator, &field, m.Type); err != nil {
-				return nil, fmt.Errorf("unable to embed type %q as field %q in %q: %v", m.Type, field.Name, t.Name, err)
+				fmt.Printf("Field %+v\n", field)
+				return nil, fmt.Errorf("unable to embed type %q as field %q in %q: %v",
+					m.Type, field.Name, t.Name, err)
 			}
 		}
 		if len(field.Name) == 0 {
